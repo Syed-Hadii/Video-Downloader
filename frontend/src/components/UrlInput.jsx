@@ -12,7 +12,7 @@ export default function UrlInput({
 }) {
   const [url, setUrl] = useState(defaultUrl);
   const [platform, setPlatform] = useState(defaultPlatform);
-  const [status, setStatus] = useState("idle"); // idle | fetching
+  const [status, setStatus] = useState("idle"); 
 
   const handleFetch = async () => {
     if (!url) return alert("Please paste a video URL first");

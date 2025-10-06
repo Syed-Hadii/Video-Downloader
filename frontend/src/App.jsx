@@ -116,7 +116,7 @@ export default function App() {
               whileHover={{ scale: 1.02 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
-              {/* <motion.div
+              <motion.div
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
@@ -130,9 +130,9 @@ export default function App() {
                     filter: "drop-shadow(0 4px 12px rgba(242, 92, 5, 0.2))",
                   }}
                 />
-              </motion.div> */}
+              </motion.div>
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {/*  <h1
+                <h1
                   style={{
                     fontSize: "28px",
                     fontWeight: "800",
@@ -145,22 +145,22 @@ export default function App() {
                   }}
                 >
                   Gexton
-                </h1> */}
+                </h1>
                 <p
                   style={{
-                    // fontSize: "28px",
-                    // color: "#666",
-                    // fontWeight: "600",
-                    // margin: 0,
-                    // letterSpacing: "0.5px",
-                    fontSize: "28px",
-                    fontWeight: "800",
-                    background:
-                      "linear-gradient(135deg, #1a1a1a 0%, #f25c05 100%)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
+                    fontSize: "12px",
+                    color: "#666",
+                    fontWeight: "600",
                     margin: 0,
-                    letterSpacing: "-0.5px",
+                    letterSpacing: "0.5px",
+                    // fontSize: "28px",
+                    // fontWeight: "800",
+                    // background:
+                    //   "linear-gradient(135deg, #1a1a1a 0%, #f25c05 100%)",
+                    // WebkitBackgroundClip: "text",
+                    // WebkitTextFillColor: "transparent",
+                    // margin: 0,
+                    // letterSpacing: "-0.5px",
                   }}
                 >
                   Video Downloader Pro
