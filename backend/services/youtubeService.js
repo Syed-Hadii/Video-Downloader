@@ -1,229 +1,131 @@
-import ytDlpExec from 'yt-dlp-exec';
-import { PassThrough } from 'stream';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// services/youtubeService.js
+import ytDlpExec from "yt-dlp-exec";
+import { getCache, setCache } from "./cache.js";
 
 const MAX_DURATION = parseInt(process.env.MAX_DURATION_SECONDS) || 3600;
-const MAX_FILESIZE = parseInt(process.env.MAX_FILESIZE_BYTES) || 524288000;
+// cache TTL is in cache.setCache default (30m)
 
-/**
- * Get video information from YouTube
- */
+const extractVideoId = (url) => {
+    // quick YouTube id extraction (works for common variants)
+    try {
+        const u = new URL(url);
+        if (u.hostname.includes("youtu.be")) {
+            return u.pathname.slice(1);
+        }
+        if (u.hostname.includes("youtube.com")) {
+            return u.searchParams.get("v") || null;
+        }
+    } catch (e) { }
+    return null;
+};
+
 const getInfo = async (url) => {
     try {
+        const id = extractVideoId(url) || url;
+        const cacheKey = `info:${id}`;
+        const cached = getCache(cacheKey);
+        if (cached) return cached;
+
+        // Request JSON metadata (skip any downloading)
         const info = await ytDlpExec(url, {
             dumpSingleJson: true,
             noWarnings: true,
             noCallHome: true,
             noCheckCertificate: true,
             preferFreeFormats: true,
-            youtubeSkipDashManifest: false,
+            skipDownload: true,
+            // youtubeSkipDashManifest may help in some cases
+            youtubeSkipDashManifest: true,
+            // set socket timeout shorter to avoid hangs (seconds)
+            socketTimeout: 10,
         });
 
         if (info.duration && info.duration > MAX_DURATION) {
             throw new Error(`Video duration exceeds maximum allowed (${MAX_DURATION} seconds)`);
         }
 
+        // Build unique resolutions list, and also build a mapping resolution->best combined itag when possible
         const formats = [];
-        const seenResolutions = new Set();
-        const audioTracks = [];
+        const seen = new Set();
+        const formatMap = {}; // resolution => itag (prefer combined mp4)
+        let bestCombinedItag = null; // an itag that contains audio+video in mp4 (fast path)
 
-        if (info.audio_tracks && Array.isArray(info.audio_tracks)) {
-            for (const track of info.audio_tracks) {
-                audioTracks.push({
-                    id: track.id,
-                    lang: track.language,
-                    label: track.language_name || track.language,
-                    url: track.url || null
-                });
-            }
-        }
+        if (info.formats && Array.isArray(info.formats)) {
+            // iterate formats and collect combined mp4 formats and single streams
+            // We will choose the highest combined mp4 (video+audio) as bestCombinedItag
+            for (const f of info.formats) {
+                // skip DASH audio-only or video-only unless needed later
+                const isVideo = f.vcodec && f.vcodec !== "none";
+                const isAudio = f.acodec && f.acodec !== "none";
+                const ext = f.ext || "";
 
-        if (info.formats) {
-            for (const fmt of info.formats) {
-                if (fmt.vcodec !== 'none' && fmt.height) {
-                    const resolution = `${fmt.height}p`;
-                    if (!seenResolutions.has(resolution)) {
-                        seenResolutions.add(resolution);
+                if (isVideo && f.height) {
+                    const resolution = `${f.height}p`;
+                    if (!seen.has(resolution)) {
+                        seen.add(resolution);
                         formats.push({
-                            itag: fmt.format_id,
-                            resolution: resolution,
-                            ext: fmt.ext,
-                            filesize: fmt.filesize || null,
-                            hasAudio: fmt.acodec !== 'none',
-                            fps: fmt.fps || null,
-                            vcodec: fmt.vcodec
+                            itag: f.format_id,
+                            resolution,
+                            ext,
+                            filesize: f.filesize || null,
+                            fps: f.fps || null,
+                            vcodec: f.vcodec,
+                            acodec: f.acodec || null,
+                            combined: isVideo && isAudio && ext === "mp4",
                         });
+                        // if this format has both audio+video and is mp4, consider it for direct use
+                        if (isVideo && isAudio && ext === "mp4") {
+                            // pick best combined mp4: prefer higher resolution (we fill formats in arbitrary order)
+                            if (!bestCombinedItag) bestCombinedItag = f.format_id;
+                            else {
+                                // compare heights
+                                const prev = info.formats.find(x => String(x.format_id) === String(bestCombinedItag));
+                                if (prev && f.height > prev.height) bestCombinedItag = f.format_id;
+                            }
+                        }
+                    }
+                    // keep a mapping resolution->itag (this will be the first itag found for that resolution)
+                    if (!formatMap[resolution]) {
+                        formatMap[resolution] = f.format_id;
                     }
                 }
-
-                if (fmt.acodec !== 'none' && fmt.vcodec === 'none') {
-                    audioTracks.push({
-                        id: fmt.format_id,
-                        label: `Audio ${fmt.abr || fmt.asr || 'unknown'}kbps`,
-                        bitrate: fmt.abr || fmt.asr || null,
-                        ext: fmt.ext
-                    });
-                }
             }
         }
 
-        formats.sort((a, b) => {
-            const aRes = parseInt(a.resolution);
-            const bRes = parseInt(b.resolution);
-            return bRes - aRes;
-        });
+        // sort formats descending by resolution numeric
+        formats.sort((a, b) => parseInt(b.resolution) - parseInt(a.resolution));
 
-        const uniqueAudioTracks = audioTracks.filter((track, index, self) =>
-            index === self.findIndex((t) => t.bitrate === track.bitrate)
-        ).slice(0, 3);
-
-        const captions = [];
-        if (info.subtitles || info.automatic_captions) {
-            const allSubs = info.subtitles || {};
-            for (const [lang, subFormats] of Object.entries(allSubs)) {
-                if (subFormats && subFormats.length > 0) {
-                    captions.push({
-                        lang: lang,
-                        name: subFormats[0].name || lang,
-                        url: subFormats[0].url || null
-                    });
-                }
-            }
+        // downloadEndpoints for UI
+        const downloadEndpoints = formats.map((f) => ({
+            label: `${f.resolution} (MP4)`,
+            // send itag as formatQuery so frontend can call download with itag
+            formatQuery: String(f.itag),
+            resolution: f.resolution,
+        }));
+        // add best fallback as itag if available, otherwise string 'best'
+        if (bestCombinedItag) {
+            downloadEndpoints.unshift({ label: "Best (MP4)", formatQuery: String(bestCombinedItag), resolution: "best" });
+        } else {
+            downloadEndpoints.unshift({ label: "Best (Merged)", formatQuery: "best", resolution: "best" });
         }
 
-        const downloadEndpoints = [];
-
-        formats.forEach(fmt => {
-            downloadEndpoints.push({
-                label: `${fmt.resolution} (MP4 - ${fmt.vcodec})`,
-                formatQuery: fmt.resolution
-            });
-        });
-
-        if (uniqueAudioTracks.length > 0) {
-            downloadEndpoints.push({
-                label: 'Audio Only (MP3)',
-                formatQuery: 'audio'
-            });
-        }
-
-        return {
-            platform: 'youtube',
-            title: info.title || 'Unknown Title',
+        const out = {
+            platform: "youtube",
+            title: info.title || "Unknown Title",
             thumbnail: info.thumbnail || null,
             duration: info.duration || null,
-            formats: formats,
-            audioTracks: uniqueAudioTracks,
-            captions: captions,
-            downloadEndpoints: downloadEndpoints
+            formats,
+            format_map: formatMap,
+            best_combined_itag: bestCombinedItag ? String(bestCombinedItag) : null,
+            downloadEndpoints,
         };
 
-    } catch (error) {
-        console.error('YouTube getInfo error:', error);
-        throw new Error(`Failed to fetch YouTube video info: ${error.message}`);
+        setCache(cacheKey, out);
+        return out;
+    } catch (err) {
+        console.error("YouTube getInfo error:", err);
+        throw new Error(`Failed to fetch YouTube video info: ${err.message}`);
     }
 };
 
-/**
- * Download video from YouTube and return stream
- */
-const download = async (url, format = '720p', captionLang = null) => {
-    try {
-        const tempDir = path.join(__dirname, '../../temp');
-        if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-        }
-
-        const timestamp = Date.now();
-        const randomId = Math.random().toString(36).substring(7);
-        const outputTemplate = path.join(tempDir, `video_${timestamp}_${randomId}.mp4`);
-
-        let ytDlpOptions = {
-            output: outputTemplate,
-            // ✅ Force H.264 (avc1) codec for compatibility
-            format: 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best',
-            mergeOutputFormat: 'mp4',
-            noWarnings: true,
-            noCallHome: true,
-            noCheckCertificate: true,
-        };
-
-        if (format === 'audio') {
-            ytDlpOptions.format = 'bestaudio';
-            ytDlpOptions.extractAudio = true;
-            ytDlpOptions.audioFormat = 'mp3';
-            ytDlpOptions.output = outputTemplate.replace('.mp4', '.mp3');
-        } else if (format && format !== 'best') {
-            const resolution = format.replace('p', '');
-            ytDlpOptions.format = `bestvideo[height<=${resolution}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[height<=${resolution}][vcodec^=avc1][ext=mp4]/best`;
-        }
-
-        if (captionLang) {
-            ytDlpOptions.writeSubtitles = true;
-            ytDlpOptions.subLang = captionLang;
-            ytDlpOptions.convertSubs = 'srt';
-        }
-
-        await ytDlpExec(url, ytDlpOptions);
-
-        let downloadedFile = outputTemplate;
-        if (format === 'audio') {
-            downloadedFile = outputTemplate.replace('.mp4', '.mp3');
-        }
-
-        if (!fs.existsSync(downloadedFile)) {
-            const files = fs.readdirSync(tempDir).filter(f =>
-                f.startsWith(`video_${timestamp}_${randomId}`)
-            );
-            if (files.length > 0) {
-                downloadedFile = path.join(tempDir, files[0]);
-            } else {
-                throw new Error('Downloaded file not found');
-            }
-        }
-
-        const stats = fs.statSync(downloadedFile);
-        if (stats.size > MAX_FILESIZE) {
-            fs.unlinkSync(downloadedFile);
-            throw new Error(`File size exceeds maximum allowed (${MAX_FILESIZE} bytes)`);
-        }
-
-        const fileStream = fs.createReadStream(downloadedFile);
-
-        fileStream.on('end', () => {
-            setTimeout(() => {
-                if (fs.existsSync(downloadedFile)) {
-                    fs.unlinkSync(downloadedFile);
-                    console.log(`🗑️  Cleaned up temp file: ${downloadedFile}`);
-                }
-            }, 1000);
-        });
-
-        fileStream.on('error', (error) => {
-            console.error('File stream error:', error);
-            if (fs.existsSync(downloadedFile)) {
-                fs.unlinkSync(downloadedFile);
-            }
-        });
-
-        const filename = format === 'audio'
-            ? `youtube_audio_${timestamp}.mp3`
-            : `youtube_video_${format}_${timestamp}.mp4`;
-
-        return {
-            stream: fileStream,
-            filename: filename
-        };
-
-    } catch (error) {
-        console.error('YouTube download error:', error);
-        throw new Error(`Failed to download YouTube video: ${error.message}`);
-    }
-};
-
-export default { getInfo, download };
+export default { getInfo };

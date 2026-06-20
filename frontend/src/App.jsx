@@ -6,7 +6,7 @@ import UrlInput from "./components/UrlInput";
 import VideoInfo from "./components/VideoInfo";
 import LoadingSpinner from "./components/LoadingSpinner";
 import { fetchInfo, downloadVideo } from "./services/api";
-import logo from "./assets/close-logo.png";
+import playerIcon from "./assets/video-player-icon.svg";
 
 const THEME = {
   primary: "#f25c05",
@@ -16,23 +16,21 @@ const THEME = {
 
 export default function App() {
   const [url, setUrl] = useState("");
-  const [platform, setPlatform] = useState("youtube");
   const [info, setInfo] = useState(null);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [error, setError] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleFetch = async (u, p) => {
+  const handleFetch = async (u) => {
     setError(null);
     setInfo(null);
     setLoadingInfo(true);
     setDownloadProgress(0);
     try {
-      const data = await fetchInfo(u, p);
+      const data = await fetchInfo(u);
       setInfo(data);
       setUrl(u);
-      setPlatform(p);
     } catch (err) {
       console.error(err);
       setError(err?.message || "Failed to fetch info");
@@ -42,7 +40,7 @@ export default function App() {
   };
 
   const handleDownload = async (options = {}) => {
-    // options: { format, captionLang, captions: [...], audioId? }
+    // options: { format, filename }
     setIsDownloading(true);
     setDownloadProgress(0);
     setError(null);
@@ -50,14 +48,11 @@ export default function App() {
     try {
       await downloadVideo({
         url,
-        platform,
         format: options.format,
-        captionLang: options.captionLang || null,
-        audioId: options.audioId || null,
         onProgress: (pct) => {
           setDownloadProgress(pct);
         },
-        filename: options.filename, // optional
+        filename: options.filename,
       });
       // success -> browser saved file via blob download
     } catch (err) {
@@ -106,7 +101,6 @@ export default function App() {
               padding: "20px 0",
             }}
           >
-            {/* Brand Section */}
             <motion.div
               style={{
                 display: "flex",
@@ -122,8 +116,8 @@ export default function App() {
                 transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
               >
                 <img
-                  src={logo || "/placeholder.svg"}
-                  alt="Gexton"
+                  src={playerIcon}
+                  alt="Video Downloader"
                   style={{
                     width: "48px",
                     height: "48px",
@@ -144,7 +138,7 @@ export default function App() {
                     letterSpacing: "-0.5px",
                   }}
                 >
-                  Gexton
+                  Video Downloader
                 </h1>
                 <p
                   style={{
@@ -153,22 +147,13 @@ export default function App() {
                     fontWeight: "600",
                     margin: 0,
                     letterSpacing: "0.5px",
-                    // fontSize: "28px",
-                    // fontWeight: "800",
-                    // background:
-                    //   "linear-gradient(135deg, #1a1a1a 0%, #f25c05 100%)",
-                    // WebkitBackgroundClip: "text",
-                    // WebkitTextFillColor: "transparent",
-                    // margin: 0,
-                    // letterSpacing: "-0.5px",
                   }}
                 >
-                  Video Downloader Pro
+                  YouTube Downloader
                 </p>
               </div>
             </motion.div>
 
-            {/* Platform Badge */}
             <motion.div
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -190,10 +175,10 @@ export default function App() {
                 viewBox="0 0 24 24"
                 fill="currentColor"
               >
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                <path d="M10 15l5-3-5-3v6z M2 6h20v12H2z" />
               </svg>
               <span style={{ fontSize: "14px", fontWeight: "700" }}>
-                Multi-Platform
+                YouTube Only
               </span>
             </motion.div>
           </div>
@@ -221,7 +206,6 @@ export default function App() {
         >
           <UrlInput
             defaultUrl={url}
-            defaultPlatform={platform}
             onFetch={handleFetch}
             theme={THEME}
             disabled={loadingInfo || isDownloading}
@@ -282,7 +266,6 @@ export default function App() {
                 >
                   <VideoInfo
                     info={info}
-                    platform={platform}
                     onDownload={handleDownload}
                     downloading={isDownloading}
                     progress={downloadProgress}

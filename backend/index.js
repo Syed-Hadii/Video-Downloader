@@ -28,7 +28,7 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Routes
+// Routes (YouTube-only)
 app.post('/api/info', infoController);
 app.get('/api/download', downloadController);
 
@@ -47,5 +47,5 @@ app.use((req, res) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Backend server running on port ${PORT}`);
-  console.log(`📝 Make sure yt-dlp and ffmpeg are installed on your system`);
+  console.log(`📝 Make sure yt-dlp (or yt-dlp binary) and ffmpeg are installed on your system`);
 });

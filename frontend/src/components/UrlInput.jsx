@@ -1,24 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 export default function UrlInput({
   defaultUrl = "",
-  defaultPlatform = "youtube",
   onFetch,
   theme,
   disabled,
 }) {
   const [url, setUrl] = useState(defaultUrl);
-  const [platform, setPlatform] = useState(defaultPlatform);
-  const [status, setStatus] = useState("idle"); 
+  const [status, setStatus] = useState("idle"); // idle | fetching
 
   const handleFetch = async () => {
-    if (!url) return alert("Please paste a video URL first");
+    if (!url) return alert("Please paste a YouTube video URL first");
     try {
       setStatus("fetching");
-      await onFetch(url.trim(), platform);
+      await onFetch(url.trim());
     } finally {
       setStatus("idle");
     }
@@ -44,7 +42,6 @@ export default function UrlInput({
           flexWrap: "wrap",
         }}
       >
-        {/* URL Input */}
         <div style={{ flex: "1 1 300px", position: "relative" }}>
           <div
             style={{
@@ -74,7 +71,7 @@ export default function UrlInput({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleFetch()}
-            placeholder="Paste video URL here..."
+            placeholder="Paste YouTube video URL here..."
             style={{
               width: "100%",
               padding: "14px 16px 14px 48px",
@@ -98,35 +95,10 @@ export default function UrlInput({
           />
         </div>
 
-        {/* Platform Dropdown */}
-        <select
-          value={platform}
-          onChange={(e) => setPlatform(e.target.value)}
-          style={{
-            padding: "14px 16px",
-            border: "2px solid #e5e5e5",
-            borderRadius: "12px",
-            fontSize: "15px",
-            outline: "none",
-            background: "#ffffff",
-            color: "#1a1a1a",
-            fontWeight: "600",
-            cursor: "pointer",
-            minWidth: "140px",
-          }}
-          disabled={disabled || status === "fetching"}
-        >
-          <option value="youtube">YouTube</option>
-          <option value="instagram">Instagram</option>
-          <option value="facebook">Facebook</option>
-          <option value="tiktok">TikTok</option>
-        </select>
-
-        {/* Fetch Button */}
         <motion.button
+          onClick={handleFetch}
           whileHover={{ scale: status !== "fetching" ? 1.03 : 1 }}
           whileTap={{ scale: status !== "fetching" ? 0.97 : 1 }}
-          onClick={handleFetch}
           disabled={disabled || status === "fetching" || !url}
           style={{
             background:
@@ -155,70 +127,46 @@ export default function UrlInput({
             transition: "all 0.2s",
           }}
         >
-          <AnimatePresence mode="wait">
-            {status === "fetching" ? (
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+          {status === "fetching" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
+                  width: "18px",
+                  height: "18px",
+                  border: "3px solid rgba(255, 255, 255, 0.3)",
+                  borderTop: "3px solid #ffffff",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
                 }}
+              />
+              <span>Analyzing...</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <svg
+                style={{ width: "20px", height: "20px" }}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <div
-                  style={{
-                    width: "18px",
-                    height: "18px",
-                    border: "3px solid rgba(255, 255, 255, 0.3)",
-                    borderTop: "3px solid #ffffff",
-                    borderRadius: "50%",
-                    animation: "spin 0.8s linear infinite",
-                  }}
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
                 />
-                <span>Analyzing...</span>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="ready"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <svg
-                  style={{ width: "20px", height: "20px" }}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2.5}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-                <span>Get Info</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </svg>
+              <span>Get Info</span>
+            </div>
+          )}
         </motion.button>
       </div>
 
-      <style>
-        {`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}
-      </style>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </motion.div>
   );
 }
